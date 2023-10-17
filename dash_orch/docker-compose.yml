@@ -1,0 +1,54 @@
+version: '3.9' 
+services: 
+  p4000: 
+    build: p4000 
+    ports: 
+      - '4000:4000'
+    volumes:
+      - /Users/dipanjanpaul/tailorbird/d_analytics/data/processed/:/data
+
+  p4001:
+    build: p4001
+    ports:
+      - '4001:4001'
+    volumes:
+      - /Users/dipanjanpaul/tailorbird/d_analytics/data/processed/:/data
+
+  p4002:
+    build: p4002 
+    ports:
+      - '4002:4002'
+    volumes:
+      - /Users/dipanjanpaul/tailorbird/d_analytics/data/processed/:/data
+
+  p4003:
+    build: p4003 
+    ports:
+      - '4003:4003'
+    volumes:
+      - /Users/dipanjanpaul/tailorbird/d_analytics/data/processed/:/data
+
+  p4004:
+    build: p4004 
+    ports:
+      - '4004:4004'
+    volumes:
+      - /Users/dipanjanpaul/tailorbird/d_analytics/data/processed/:/data
+
+  p4005:
+    build: p4005 
+    ports:
+      - '4005:4005'
+    volumes:
+      - /Users/dipanjanpaul/tailorbird/d_analytics/data/processed/:/data
+
+  p4006:
+    build: p4006 
+    ports:
+      - '4006:4006'
+    volumes:
+      - /Users/dipanjanpaul/tailorbird/d_analytics/data/processed/:/data
+
+
+volumes:
+  data:
