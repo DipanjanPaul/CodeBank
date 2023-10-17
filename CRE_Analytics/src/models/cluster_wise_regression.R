@@ -1,0 +1,201 @@
+rm(list=ls())
+
+multipopl <- function(file, pop_n, tolerance, start_count, seed, l_transform = 'N') {
+
+  print(paste("Testing for ", pop_n, " splits for ", start_count, " starts and tolerance at ", 
+              tolerance), sep="", Quote=F)
+  
+  rows <- nrow(file)
+  set.seed(seed)
+  spl <- sample(x=1:pop_n, size=rows, replace=T)
+  file$spl <- spl
+  
+  rsq_monitor <- data.frame()
+  
+  df <- data.frame()
+  df[1:nrow(file), c('property_href')] <- file$property_href
+  df <- df[order(df$property_href), , drop=FALSE]
+  
+  for (k in 1:start_count) {
+#    print(c("Start Count: ", k))
+    
+    rsq_monitor[k, c('iteration')] <- k
+    
+    if (k > 1) {
+      spl <- sample(x=1:pop_n, size=rows, replace=T)
+      file$spl <- spl
+    }
+    
+    file$yhat <- NA
+    rsq_prev <- 0
+    min_rsq_reached <- "N"
+    i <- 1
+    
+    while (min_rsq_reached == "N") {
+      file <- file[order(file$spl),]
+      
+      if (l_transform == 'Y') {
+        file$yhat <- exp(unlist(lapply(1:pop_n, function(x) 
+          predict(lm(log(sale_price) ~ beds  + prop_size + age + lot_size, data=file[file$spl==x,]), 
+                  newdata=file[file$spl==x,]))))
+        
+      } else {
+        file$yhat <- unlist(lapply(1:pop_n, function(x) 
+          predict(lm(sale_price ~ beds  + prop_size + age + lot_size, data=file[file$spl==x,]), 
+                  newdata=file[file$spl==x,])))
+        
+      }
+      
+      
+      rsq <- 1 - sum((file$sale_price - file$yhat)**2)/sum((file$sale_price - mean(file$sale_price))**2)
+      
+      if (i == 1) {
+        # print(c('Startig R Square: ', rsq))
+        rsq_monitor[k, c('rsq')] <- rsq
+      }
+      
+      if (((rsq - rsq_prev) < tolerance) | (i > 50))  {
+        min_rsq_reached == "Y"
+#        print(c('Ending R Square: ', rsq))
+        if (rsq > rsq_monitor[k, c('rsq')]) {
+          rsq_monitor[k, c('rsq')] <- rsq
+        }
+        #print(c(k, mean(abs(file$sale_price - file$yhat))))
+        # for (l in 1:pop_n) {
+        #   
+        #   a = (mean(abs(predict(lm(sale_price ~ beds  + prop_size + age + lot_size, data=file[file$spl == l,]), 
+        #                          newdata=file[file$spl == l,]) - file[file$spl == l, c('sale_price')])))
+        #   
+        #   b = (mean(abs(file[file$spl == l, 'yhat'] - file[file$spl == l, c('sale_price')])))
+        #   
+        #   print(c(a,b))
+        #         
+        # }
+        
+        break
+      }
+      
+      rsq_prev <- rsq
+      
+      x <- do.call('cbind', (lapply(1:pop_n, function(x) 
+                            (file$sale_price - (predict(lm(sale_price ~ beds + prop_size + age + lot_size, 
+                                                           data=file[file$spl==x,]), 
+                                               newdata=file)))**2)))
+      
+      file$spl <- apply(x, 1, function(x) which(x == min(x)))
+      
+      i <- i + 1
+    }
+    
+    temp <- merge(df, file[,c('property_href', 'spl')], by = 'property_href')
+    temp <- temp[order(temp$property_href),]
+    df[,k+1] = temp$spl
+    
+  }
+
+  print(c('Best R Square: ', max(rsq_monitor$rsq)))
+  df <- df[,c(1, which(rsq_monitor$rsq == max(rsq_monitor$rsq)) + 1)]
+  names(df) <- c('property_href', 'f_spl')
+  
+  file <- file[order(file$property_href),]
+  file$spl <- df$f_spl
+  return(file)
+}
+
+i_df <- read.csv('../../data/interim/clustering_model_input_with_loc.csv', header = TRUE)
+
+val_zip <- table(i_df$zip_5)
+val_zip <-names(val_zip[val_zip > 100])
+
+k_clusters = 5
+out <- list(k_clusters)
+
+for (zip in val_zip) {
+  print(zip)
+  
+  
+  
+  for (j in 1:k_clusters) {
+    #  print(c('Nr. of splits: ', j))
+    out[[j]] <- multipopl(i_df[i_df$zip_5 == zip,], j, 0.001, 50, 12345, 'N')
+  }
+  
+  min_rsq = vector()
+  for (k in (1:k_clusters)) {
+    rsq_m = list()
+    for (i in 1:k) {
+      rsq_m[i] = summary(lm(sale_price ~ beds + prop_size + age + lot_size, data=out[[k]][out[[k]]$spl == i,]))$adj.r.squared
+      
+      # print(mean(abs(predict(lm(sale_price ~ beds  + prop_size + age + lot_size, data=out[[k]][out[[k]]$spl == i,]), 
+      #                        newdata=out[[k]][out[[k]]$spl == i,]) - out[[k]][out[[k]]$spl == i, c('sale_price')])))
+      # 
+      # print(mean(abs(out[[k]][out[[k]]$spl == i, 'yhat'] - out[[k]][out[[k]]$spl == i, c('sale_price')])))
+    }
+    ##print(unlist(rsq_m))
+    print(paste("Testing for ", k, " splits ", " has avg/min/max rsq of ", 
+                round(mean(unlist(rsq_m)),2), min(unlist(rsq_m)), max(unlist(rsq_m))), sep="", Quote=F)
+    
+    min_rsq[k] <- min(unlist(rsq_m))
+    
+  }
+  
+  f_df = out[[which(min_rsq == max(min_rsq))]]
+  
+  f_df <- f_df[order(f_df$spl),]
+  
+  f_cluster = which(min_rsq == max(min_rsq))
+  f_df$yhat <- unlist(lapply(1:f_cluster, function(x) 
+      predict(lm(sale_price ~ beds  + prop_size + age + lot_size, data=f_df[f_df$spl==x,]), 
+              newdata=f_df[f_df$spl==x,])))
+  
+  out_file = paste(c("../../data/interim/", zip, ".csv"), collapse = "")
+  write.csv(f_df, out_file, row.names = FALSE)
+  
+}
+
+## Alternate Execution ##
+
+k_clusters = 5
+out <- list(k_clusters)
+
+
+for (j in 1:k_clusters) {
+  #  print(c('Nr. of splits: ', j))
+  out[[j]] <- multipopl(i_df[i_df$zip_5 == '8873',], j, 0.001, 50, 12345, 'N')
+}
+
+for (k in (1:k_clusters)) {
+  rsq_m = list()
+  for (i in 1:k) {
+    rsq_m[i] = summary(lm(sale_price ~ beds + prop_size + age + lot_size, data=out[[k]][out[[k]]$spl == i,]))$adj.r.squared
+  }
+  ##print(unlist(rsq_m))
+  print(paste("Testing for ", k, " splits ", " has avg/min/max rsq of ", 
+              round(mean(unlist(rsq_m)),2), min(unlist(rsq_m)), max(unlist(rsq_m))), sep="", Quote=F)
+}  
+  
+
+k=5
+
+f_df = out[[k]]
+
+f_df <- f_df[order(f_df$spl),]
+
+f_df$yhat <- unlist(lapply(1:k, function(x) 
+  predict(lm(sale_price ~ beds  + prop_size + age + lot_size, data=f_df[f_df$spl==x,]), 
+          newdata=f_df[f_df$spl==x,])))
+
+for (i in 1:k) {
+  print(i)
+  
+  ##print(summary(lm(sale_price ~ beds  + prop_size + age + lot_size, data=out[[k]][out[[k]]$spl == i,])))
+  print(mean(abs(predict(lm(sale_price ~ beds  + prop_size + age + lot_size, data=f_df[f_df$spl == i,]), 
+             newdata=f_df[f_df$spl == i,]) - f_df[f_df$spl == i, c('sale_price')])))
+  
+  print(mean(abs(f_df[f_df$spl == i, 'yhat'] - f_df[f_df$spl == i, c('sale_price')])))
+  
+  
+  
+}
+
+#write.csv(out[[2]], "../../data/interim/08873.csv", row.names = FALSE)
